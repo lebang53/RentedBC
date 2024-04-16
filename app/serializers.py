@@ -37,7 +37,7 @@ class UserSerializer(ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'first_name', 'last_name', 'email', 'username', 'password', 'avatar']
+        fields = ['id', 'first_name', 'last_name', 'email', 'username', 'password', 'avatar', 'role']
         extra_kwargs = {
             'password': {
                 'write_only': True
@@ -101,9 +101,9 @@ class CommentSerializer(ModelSerializer):
 
 
 class FollowSerializer(ModelSerializer):
-    follower = UserSerializer()
     following = UserSerializer()
 
     class Meta:
-        model = Comment
-        fields = ['follower', 'following']
+        model = Follow
+        fields = ['following']
+

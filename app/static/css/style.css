@@ -1,0 +1,5 @@
+#userStatsChart {
+    aspect-ratio: unset; /* Xóa bỏ thiết lập tỷ lệ khung hình */
+    width: 400px;
+    height: 400px;
+}

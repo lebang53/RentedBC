@@ -1,0 +1,19 @@
+<!-- templates/stats.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% load static %}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Statistics</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" type="text/css" href="{% static 'css/styles.css' %}">
+</head>
+<body>
+    <div>
+        <canvas id="userStatsChart" height="600"></canvas>
+    </div>
+    <script src="{% static 'js/stats.js' %}"></script>
+
+</body>
+</html>

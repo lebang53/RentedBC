@@ -1,3 +1,6 @@
+from django.db.models import Q, Count
+from django.db.models.functions import TruncMonth
+from django.http import JsonResponse
 from rest_framework import viewsets, permissions, generics, parsers, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
@@ -6,10 +9,18 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from app import serializers, perms
 import cloudinary.uploader
-
+from django.shortcuts import render
 from app.models import Category, User, House, Post, Follow, Comment
 from app.serializers import CategorySerializer, UserSerializer, HouseSerializer, PostSerializer, CommentSerializer, \
     FollowSerializer, LoginSerializer, ImageSerializer
+
+
+def stats_view(request):
+    return render(request, 'stats.html')
+
+
+def stats_view2(request):
+    return render(request, 'house_stats.html')
 
 
 class CategoryViewSet(viewsets.ModelViewSet):
@@ -31,9 +42,31 @@ class ImageViewSet(viewsets.ViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+class UserStatsViewSet(viewsets.ViewSet):
+    def list(self, request):
+        role = dict(User.ROLE_CHOICES)
+
+        role_count = User.objects.values('role').annotate(count=Count('role'))
+
+        role_stats = {role[item['role']]: item['count'] for item in role_count}
+
+        return Response(role_stats)
+
+
+class HouseStatsViewSet(viewsets.ViewSet):
+    def list(self, request):
+        house_stats = House.objects.annotate(month=TruncMonth('created_date')).values('month').annotate(
+            total=Count('id')).order_by('month')
+
+        data = [{'month': stat['month'].strftime('%Y-%m'), 'total': stat['total']} for stat in house_stats]
+
+        return Response(data)
+
+
 class UserViewSet(viewsets.ViewSet, generics.CreateAPIView):
     queryset = User.objects.filter(is_active=True)
     serializer_class = UserSerializer
+
     # parser_classes = [parsers.MultiPartParser]
 
     def get_permissions(self):
@@ -92,7 +125,8 @@ class UserViewSet(viewsets.ViewSet, generics.CreateAPIView):
         follow, created = Follow.objects.get_or_create(following=user, follower=request.user)
 
         if not created:
-            return Response({'message': 'You are already following this user'}, status=status.HTTP_200_OK)
+            follow.delete()
+            return Response({'message': 'You have unfollowed this user'}, status=status.HTTP_200_OK)
 
         return Response(serializers.UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
@@ -100,6 +134,11 @@ class UserViewSet(viewsets.ViewSet, generics.CreateAPIView):
 class HouseViewSet(viewsets.ModelViewSet):
     queryset = House.objects.filter(active=True)
     serializer_class = HouseSerializer
+
+    def get_permissions(self):
+        if self.action in ['verify_house']:
+            return [permissions.IsAuthenticated()]
+        return [permissions.AllowAny()]
 
     def get_queryset(self):
         queryset = self.queryset
@@ -115,7 +154,13 @@ class HouseViewSet(viewsets.ModelViewSet):
 
             rent_price = self.request.query_params.get('rent_price')
             if rent_price:
-                queryset = House.objects.filter(rent_price=rent_price)
+                rent_price = float(rent_price)
+
+                rent_price_range_min = rent_price * 0.9
+                rent_price_range_max = rent_price * 1.1
+
+                queryset = queryset.filter(
+                    Q(rent_price__gte=rent_price_range_min) & Q(rent_price__lte=rent_price_range_max))
 
         return queryset
 
@@ -125,10 +170,14 @@ class HouseViewSet(viewsets.ModelViewSet):
 
         return Response(serializers.PostSerializer(posts, many=True).data, status=status.HTTP_200_OK)
 
-    @action(methods=['put'], url_path='verify', detail=True, permission_classes=[IsAdminUser])
+    @action(methods=['put'], url_path='verify', detail=True)
     def verify_house(self, request, pk):
         house = self.get_object()
-
+        user = request.user
+        if user.role != User.ADMIN:
+            return Response({
+                'message': 'You not have permission!'
+            }, status=status.HTTP_400_BAD_REQUEST)
         if house.verified:
             return Response({
                 'errors': 'This house has verified!'
@@ -137,7 +186,7 @@ class HouseViewSet(viewsets.ModelViewSet):
         house.verified = True
         house.save()
 
-        serializer = serializers.PostSerializer(house)
+        serializer = serializers.HouseSerializer(house)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
@@ -146,20 +195,38 @@ class PostViewSet(viewsets.ViewSet, generics.ListAPIView, generics.DestroyAPIVie
     serializer_class = PostSerializer
 
     def get_permissions(self):
-        if self.action in ['create_post', 'add_comment']:
+        if self.action in ['create_post', 'add_comment', 'approve_post']:
             return [permissions.IsAuthenticated()]
         return [perms.PostOwner()]
 
     @action(methods=['post'], detail=False, url_path='create_post')
     def create_post(self, request):
         user = request.user
-        serializer = PostSerializer(data=request.data)
-
-        if serializer.is_valid():
-            serializer.save(user=user)
-            return Response(serializer.data, status=201)
-
-        return Response(serializer.errors, status=400)
+        if user.role == User.LANDLORD:
+            if user.owned_houses.exists():
+                serializer = PostSerializer(data=request.data)
+                if serializer.is_valid():
+                    house_id = request.data.get('house_id')
+                    if house_id is not None:
+                        try:
+                            house = House.objects.get(pk=house_id, owner=user)
+                            serializer.validated_data['house'] = house
+                            serializer.save(user=user)
+                            return Response(serializer.data, status=201)
+                        except House.DoesNotExist:
+                            return Response({'message': 'You are not the owner of the house!'},
+                                            status=status.HTTP_400_BAD_REQUEST)
+                    else:
+                        return Response({'message': 'You must provide a house ID!'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(serializer.errors, status=400)
+            else:
+                return Response({'message': 'You must add house to the post!'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            serializer = PostSerializer(data=request.data)
+            if serializer.is_valid():
+                serializer.save(user=user)
+                return Response(serializer.data, status=201)
+            return Response(serializer.errors, status=400)
 
     @action(methods=['post'], url_path='comments', detail=True)
     def add_comment(self, request, pk):
@@ -174,9 +241,14 @@ class PostViewSet(viewsets.ViewSet, generics.ListAPIView, generics.DestroyAPIVie
 
         return Response(serializers.CommentSerializer(comment).data, status=status.HTTP_201_CREATED)
 
-    @action(methods=['put'], url_path='approve', detail=True, permission_classes=[IsAdminUser])
+    @action(methods=['put'], url_path='approve', detail=True)
     def approve_post(self, request, pk):
         post = self.get_object()
+        user = request.user
+        if user.role != User.ADMIN:
+            return Response({
+                'message': 'You not have permission!'
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         if post.status != 'pending':
             return Response({
@@ -189,6 +261,8 @@ class PostViewSet(viewsets.ViewSet, generics.ListAPIView, generics.DestroyAPIVie
         serializer = serializers.PostSerializer(post)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    # def get_comment():
+
 
 class CommentViewSet(viewsets.ViewSet, generics.DestroyAPIView, generics.UpdateAPIView):
     queryset = Comment.objects.filter(active=True)
@@ -199,3 +273,18 @@ class CommentViewSet(viewsets.ViewSet, generics.DestroyAPIView, generics.UpdateA
 class FollowViewSet(viewsets.ViewSet, generics.CreateAPIView):
     queryset = Follow.objects.all()
     serializer_class = FollowSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    @action(methods=['get'], detail=False, url_path='get_following')
+    def get_following(self, request):
+        user = request.user  # Người dùng đang đăng nhập
+        following_users = Follow.objects.filter(follower=user)
+        serializer = FollowSerializer(following_users, many=True)
+        return Response(serializer.data)
+
+    @action(methods=['get'], detail=False, url_path='get_follower')
+    def get_follower(self, request):
+        user = request.user  # Người dùng đang đăng nhập
+        followers = Follow.objects.filter(following=user)
+        serializer = FollowSerializer(followers, many=True)
+        return Response(serializer.data)

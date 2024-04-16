@@ -17,6 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include
 from django.urls import path, re_path
+from django.views.generic import TemplateView
 from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
 from rest_framework import permissions
