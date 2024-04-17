@@ -53,7 +53,7 @@ INSTALLED_APPS = [
     'oauth2_provider',
 ]
 
-STATIC_URL = '/static/'
+STATIC_URL: str = '/static/'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -86,7 +86,7 @@ REST_FRAMEWORK = {
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR /'templates'],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -159,6 +159,17 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_HOST_USER = 'rentedbcvippro@gmail.com'
+EMAIL_HOST_PASSWORD = 's w k v t u e o b q s u e u i v'
+EMAIL_USE_TLS = True
+EMAIL_USE_SSL = False
+
+# mk: rentedbcvippro123
+
 from datetime import timedelta
 
 SIMPLE_JWT = {
@@ -203,3 +214,4 @@ SIMPLE_JWT = {
 
 ID = 'JVGiilP7rsDXeP1eY5I0oYU96eRowyGlooawqnvm'
 SECRET = 'H7RqshruaoUr2i2rYVBx9Vdw6OeGFEaRSQ2yBMi3wnbrs20tkY2eTPULZRaM0iLtdCeGchSUS2n8ymxAcZRj4A9ixu5W2GWguYXf4aVpLTpFOKcuY7ctddsy40qYGVXA'
+

@@ -13,6 +13,10 @@ from django.shortcuts import render
 from app.models import Category, User, House, Post, Follow, Comment
 from app.serializers import CategorySerializer, UserSerializer, HouseSerializer, PostSerializer, CommentSerializer, \
     FollowSerializer, LoginSerializer, ImageSerializer
+from django.core.mail import send_mail, EmailMultiAlternatives
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+from RentedBC.settings import EMAIL_HOST_USER
 
 
 def stats_view(request):
@@ -211,6 +215,24 @@ class PostViewSet(viewsets.ViewSet, generics.ListAPIView, generics.DestroyAPIVie
                         try:
                             house = House.objects.get(pk=house_id, owner=user)
                             serializer.validated_data['house'] = house
+                            # custom send email here
+                            followers = user.follower_set.all()
+                            # subject = "New Post Notification"
+                            # message = f"Hello Tenant, A new post has been posted by {user.last_name} who you already follow. Check it out."
+                            recipient_list = [follower.follower.email for follower in followers]
+                            html_message = render_to_string("email.html", {'landlord_name': user.last_name})
+                            plain_message = strip_tags(html_message)
+                            # send_mail(subject, message, EMAIL_HOST_USER, recipient_list, fail_silently=False)
+                            message = EmailMultiAlternatives(
+                                subject="New Post Notification",
+                                body=plain_message,
+                                from_email=EMAIL_HOST_USER,
+                                to=recipient_list,
+
+                            )
+                            message.attach_alternative(html_message, "text/html")
+                            message.send()
+
                             serializer.save(user=user)
                             return Response(serializer.data, status=201)
                         except House.DoesNotExist:
@@ -275,16 +297,16 @@ class FollowViewSet(viewsets.ViewSet, generics.CreateAPIView):
     serializer_class = FollowSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    @action(methods=['get'], detail=False, url_path='get_following')
-    def get_following(self, request):
-        user = request.user  # Người dùng đang đăng nhập
-        following_users = Follow.objects.filter(follower=user)
-        serializer = FollowSerializer(following_users, many=True)
-        return Response(serializer.data)
-
-    @action(methods=['get'], detail=False, url_path='get_follower')
-    def get_follower(self, request):
-        user = request.user  # Người dùng đang đăng nhập
-        followers = Follow.objects.filter(following=user)
-        serializer = FollowSerializer(followers, many=True)
-        return Response(serializer.data)
+    # @action(methods=['get'], detail=False, url_path='get_following')
+    # def get_following(self, request):
+    #     user = request.user  # Người dùng đang đăng nhập
+    #     following_users = Follow.objects.filter(follower=user)
+    #     serializer = FollowSerializer(following_users, many=True)
+    #     return Response(serializer.data)
+    #
+    # @action(methods=['get'], detail=False, url_path='get_follower')
+    # def get_follower(self, request):
+    #     user = request.user  # Người dùng đang đăng nhập
+    #     followers = Follow.objects.filter(following=user)
+    #     serializer = FollowSerializer(followers, many=True)
+    #     return Response(serializer.data)
